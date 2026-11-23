@@ -45,6 +45,45 @@ async def test_submit_deduplicates_and_completes_after_request_left(tmp_path):
     assert service.get_or_build.await_args.kwargs["enable_pwd"] is True
 
 
+async def test_range_job_passes_explicit_page_bounds(tmp_path):
+    path = tmp_path / "range.pdf"
+    path.write_bytes(b"%PDF-range")
+
+    service = SimpleNamespace(
+        build_range=AsyncMock(
+            return_value=(
+                PdfArtifact(path, "range_11_20.pdf"),
+                100,
+                11,
+                20,
+                "Test Album",
+            )
+        )
+    )
+    registry = PdfJobs(TaskManager(), service, Settings(min_free_disk_mb=0))
+    runtime = JmRuntime(None, None)
+    job = registry.submit(
+        runtime,
+        album_id="123",
+        shard_index=0,
+        start_page=11,
+        end_page=20,
+        encrypted=True,
+        quality=45,
+    )
+    await asyncio.gather(*registry.manager.tasks)
+
+    assert job.state == "ready"
+    service.build_range.assert_awaited_once_with(
+        "123",
+        11,
+        20,
+        registry.settings.shard_cache_path,
+        enable_pwd=True,
+        jpeg_quality=45,
+    )
+
+
 async def test_queue_limit_failure_retry_and_expiration(tmp_path):
     gate = asyncio.Event()
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from PIL import Image
 from pypdf import PdfReader
@@ -102,6 +102,28 @@ async def test_same_full_build_is_coalesced_and_full_shard_share_page_cache(tmp_
     cached = list((cfg.pdf_path / "v2" / "pages").glob("*.pdf"))
     assert len(cached) == 4
     assert all(p.stat().st_size > 0 for p in cached)
+
+
+async def test_build_range_uses_exact_page_bounds(tmp_path, monkeypatch):
+    from jmcomic_api.services.album import AlbumImages
+
+    paths = []
+    for i in range(5):
+        p = tmp_path / f"range-{i}.png"
+        Image.new("RGB", (20 + i, 30), "red").save(p)
+        paths.append(p)
+    cfg = Settings(pdf_dir=tmp_path / "pdf", min_free_disk_mb=0)
+    service = AlbumService(lambda: JmRuntime(None, None), settings=cfg)
+    meta = AlbumImages("1", "Test", tmp_path, paths)
+    monkeypatch.setattr(service, "metadata", AsyncMock(return_value=meta))
+
+    artifact, total, start, end, title = await service.build_range(
+        "1", 2, 4, tmp_path / "ranges", enable_pwd=False
+    )
+
+    assert (total, start, end, title) == (5, 2, 4, "Test")
+    reader = PdfReader(str(artifact.path))
+    assert len(reader.pages) == 3
 
 
 async def test_manifest_change_invalidates_related_pdf_variants_without_removing_old_paths(

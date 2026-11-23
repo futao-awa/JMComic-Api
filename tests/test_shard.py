@@ -43,11 +43,9 @@ def test_pdf_info_returns_shards(client, monkeypatch):
     assert data["jm_album_id"] == "12345"
     assert data["title"] == "Test Album"
     assert data["total_pages"] == 237
-    assert data["shard_size"] == 100
+    assert data["shard_size"] == 2000
     assert data["shards"] == [
-        {"shard_index": 1, "start_page": 1, "end_page": 100},
-        {"shard_index": 2, "start_page": 101, "end_page": 200},
-        {"shard_index": 3, "start_page": 201, "end_page": 237},
+        {"shard_index": 1, "start_page": 1, "end_page": 237},
     ]
     tc.app.state.album_service.metadata.assert_not_called()
 

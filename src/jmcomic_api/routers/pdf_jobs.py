@@ -15,6 +15,9 @@ router = APIRouter(tags=["pdf tasks"], route_class=IdentityRoute)
 class PdfJobRequest(BaseModel):
     album_id: str
     shard_index: int = Field(default=0, ge=0)
+    shard_size: int | None = Field(default=None, ge=1, le=4000)
+    start_page: int | None = Field(default=None, ge=1)
+    end_page: int | None = Field(default=None, ge=1)
     passwd: str = "true"
     quality: str | None = None
 
@@ -23,7 +26,9 @@ class PdfJobRequest(BaseModel):
 async def submit_pdf(request: Request, body: PdfJobRequest):
     job = request.app.state.pdf_jobs.submit(
         get_runtime(request), album_id=clean_album_id(body.album_id),
-        shard_index=body.shard_index, encrypted=_normalize_passwd(body.passwd),
+        shard_index=body.shard_index, shard_size=body.shard_size,
+        start_page=body.start_page, end_page=body.end_page,
+        encrypted=_normalize_passwd(body.passwd),
         quality=_resolve_quality(body.quality),
     )
     return request.app.state.pdf_jobs.status(job)

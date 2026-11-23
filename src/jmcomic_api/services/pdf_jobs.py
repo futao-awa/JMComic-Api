@@ -49,12 +49,18 @@ class PdfJobs:
             raise HTTPException(404, "PDF task not found or expired; submit again")
         return job
 
-    def submit(self, runtime, *, album_id, shard_index, encrypted, quality):
+    def submit(
+        self, runtime, *, album_id, shard_index, shard_size=None, start_page=None,
+        end_page=None, encrypted, quality
+    ):
         self.prune()
         if self.manager.closing:
             raise BusyError("application shutting down")
-        key = (runtime.identity, runtime.generation, album_id, shard_index, encrypted, quality,
-               self.settings.pdf_shard_size)
+        shard_size = shard_size or self.settings.pdf_shard_size
+        key = (
+            runtime.identity, runtime.generation, album_id, shard_index, shard_size,
+            start_page, end_page, encrypted, quality,
+        )
         for existing in self.jobs.values():
             if existing.key == key and existing.state not in {"failed", "cancelled"}:
                 return existing
@@ -74,9 +80,17 @@ class PdfJobs:
                           + self.settings.pdf_build_timeout_seconds
                           + self.settings.queue_timeout_seconds * 2)
                 async with asyncio.timeout(budget):
-                    if shard_index:
+                    if start_page is not None or end_page is not None:
+                        if start_page is None or end_page is None:
+                            raise ValueError("start_page and end_page must be provided together")
+                        result = await self.service.build_range(
+                            album_id, start_page, end_page, self.settings.shard_cache_path,
+                            enable_pwd=encrypted, jpeg_quality=quality,
+                        )
+                        job.artifact = result[0]
+                    elif shard_index:
                         result = await self.service.build_shard(
-                            album_id, shard_index, self.settings.pdf_shard_size,
+                            album_id, shard_index, shard_size,
                             self.settings.shard_cache_path, enable_pwd=encrypted,
                             jpeg_quality=quality,
                         )

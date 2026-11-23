@@ -154,11 +154,15 @@ async def pdf_shard_info(
     request: Request,
     album_service: Annotated[AlbumService, AlbumServiceDep],
     settings_dep=Depends(settings),
+    shard_size: int | None = Query(
+        None, ge=1, le=4000,
+        description="Optional pages per shard; defaults to JMAPI_PDF_SHARD_SIZE (2000).",
+    ),
 ):
     """Resolve total page count and shard layout for an album.
 
     Only upstream album metadata is read; images are not downloaded. Shard size is server-configured
-    (``JMAPI_PDF_SHARD_SIZE``, default 100). Returns a JSON like::
+    (``JMAPI_PDF_SHARD_SIZE``, default 2000). Returns a JSON like::
 
         {
           "success": true,
@@ -171,7 +175,7 @@ async def pdf_shard_info(
           }
         }
     """
-    shard_size = settings_dep.pdf_shard_size
+    shard_size = shard_size or settings_dep.pdf_shard_size
     album_id = clean_album_id(album_id)
     runtime = get_runtime(request)
     meta = await request.app.state.queries.run(
@@ -239,6 +243,10 @@ async def pdf_shard(
             "or raw JPEG quality 1-95. Omit for native (largest)."
         ),
     ),
+    shard_size: int | None = Query(
+        None, ge=1, le=4000,
+        description="Optional pages per shard; defaults to JMAPI_PDF_SHARD_SIZE (2000).",
+    ),
 ):
     """Build (or reuse cache) the Nth shard PDF for an album."""
     if shard_index <= 0:
@@ -248,7 +256,7 @@ async def pdf_shard(
         artifact, total, start, end, title = await album_service.build_shard(
             clean_album_id(album_id),
             shard_index=shard_index,
-            shard_size=settings_dep.pdf_shard_size,
+            shard_size=shard_size or settings_dep.pdf_shard_size,
             cache_dir=settings_dep.shard_cache_path,
             enable_pwd=_normalize_passwd(passwd),
             jpeg_quality=_resolve_quality(quality),

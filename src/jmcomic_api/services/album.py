@@ -209,13 +209,17 @@ class AlbumService:
     async def _ensure_title(self, album_id, runtime):
         return (await self.metadata(album_id)).title
 
-    def _variant(self, quality, encrypted, shard_index=0, shard_size=0):
+    def _variant(
+        self, quality, encrypted, shard_index=0, shard_size=0, page_start=0, page_end=0
+    ):
         return dict(
             builder=BUILD_VERSION,
             quality=quality,
             encrypted=encrypted,
             shard_index=shard_index,
             shard_size=shard_size,
+            page_start=page_start,
+            page_end=page_end,
             optimize=self.settings.jpeg_optimize,
         )
 
@@ -254,7 +258,13 @@ class AlbumService:
         paths = meta.images
         total = len(paths)
         start, end = 1, total
-        if variant["shard_index"]:
+        if variant["page_start"] and variant["page_end"]:
+            start = variant["page_start"]
+            end = min(variant["page_end"], total)
+            if start < 1 or start > total or end < start:
+                raise ValueError(f"page range {start}-{end} out of range for album of {total} pages")
+            paths = paths[start - 1 : end]
+        elif variant["shard_index"]:
             start = (variant["shard_index"] - 1) * variant["shard_size"] + 1
             end = min(start + variant["shard_size"] - 1, total)
             if start > total:
@@ -377,3 +387,30 @@ class AlbumService:
             entry["end"],
             entry["title"],
         )
+
+    async def build_range(
+        self, raw_album_id, start_page, end_page, cache_dir, *, enable_pwd, jpeg_quality=None
+    ):
+        """Build an explicitly bounded page range for adaptive file-size splitting."""
+        if self.manager.closing:
+            from jmcomic_api.concurrency.tasks import BusyError
+
+            raise BusyError("application shutting down")
+        album_id = clean_album_id(raw_album_id)
+        root = Path(cache_dir).resolve()
+        start_page, end_page = int(start_page), int(end_page)
+        if start_page < 1 or end_page < start_page:
+            raise ValueError("invalid page range")
+        variant = self._variant(
+            jpeg_quality, enable_pwd, page_start=start_page, page_end=end_page
+        )
+        hot = await asyncio.to_thread(self._hot, root, album_id, variant)
+        metrics.record_cache("range", bool(hot))
+        if hot is None:
+            meta = await self.metadata(album_id)
+            hot = await self._build(album_id, root, variant, meta)
+        pin, entry = hot
+        total = entry["total"]
+        quality_tag = f".q{jpeg_quality}" if jpeg_quality is not None else ""
+        filename = f"range_{entry['start']}_{entry['end']}_of_{total}{quality_tag}.pdf"
+        return PdfArtifact(pin.path, filename, pin), total, entry["start"], entry["end"], entry["title"]

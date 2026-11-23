@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     pdf_dir: Path = Path("./pdf")
     pdf_shard_cache_dir: Path = Path("./pdf_cache")
     pdf_shard_size: int = Field(
-        default=100, ge=1, description="Pages per PDF shard. Cache key includes this value."
+        default=2000, ge=1, le=4000,
+        description="Pages per PDF shard. Cache key includes this value."
     )
 
     log_format: str = Field(
