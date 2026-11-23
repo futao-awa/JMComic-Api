@@ -62,7 +62,11 @@ class PdfJobs:
             start_page, end_page, encrypted, quality,
         )
         for existing in self.jobs.values():
-            if existing.key == key and existing.state not in {"failed", "cancelled"}:
+            if existing.key == key and existing.state not in {
+                "failed",
+                "cancelled",
+                "sent",
+            }:
                 return existing
         active = sum(job.finished is None for job in self.jobs.values())
         if active >= self.capacity or len(self.jobs) >= 128:

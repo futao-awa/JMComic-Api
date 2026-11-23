@@ -111,6 +111,28 @@ async def test_queue_limit_failure_retry_and_expiration(tmp_path):
     assert not registry.jobs
 
 
+async def test_sent_job_is_not_reused_after_server_file_cleanup(tmp_path):
+    path = tmp_path / "sent.pdf"
+    path.write_bytes(b"%PDF-sent")
+    service = SimpleNamespace(
+        get_or_build=AsyncMock(return_value=PdfArtifact(path, "sent.pdf"))
+    )
+    registry = PdfJobs(TaskManager(), service, Settings(min_free_disk_mb=0))
+    runtime = JmRuntime(None, None)
+    params = dict(album_id="123", shard_index=0, encrypted=True, quality=45)
+
+    first = registry.submit(runtime, **params)
+    await asyncio.gather(*registry.manager.tasks)
+    assert first.state == "ready"
+    registry.mark_sent(first)
+    assert first.state == "sent"
+
+    second = registry.submit(runtime, **params)
+    assert second.id != first.id
+    await asyncio.gather(*registry.manager.tasks)
+    assert service.get_or_build.await_count == 2
+
+
 def test_task_http_status_and_binary_size_guard(client, tmp_path):
     tc, runtime = client
     runtime.identity = "anonymous"
